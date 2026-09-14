@@ -1,0 +1,76 @@
+name: Build APK and Publish App
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract project
+        run: |
+          mkdir android-project
+          unzip -q combo_forge_android_project.zip -d android-project
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - run: gradle assembleDebug
+        working-directory: android-project
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Combo-Forge-APK
+          path: android-project/app/build/outputs/apk/debug/app-debug.apk
+
+  pages:
+    needs: apk
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract web app
+        run: |
+          mkdir android-project
+          unzip -q combo_forge_android_project.zip -d android-project
+          touch android-project/app/src/main/assets/.nojekyll
+      - name: Download newest APK
+        uses: actions/download-artifact@v4
+        with:
+          name: Combo-Forge-APK
+          path: downloaded-apk
+      - name: Publish update package
+        run: |
+          mkdir -p android-project/app/src/main/assets/update
+          cp downloaded-apk/app-debug.apk android-project/app/src/main/assets/update/Combo-Forge.apk
+          VERSION_CODE=$(grep -oE 'versionCode[[:space:]]+[0-9]+' android-project/app/build.gradle | awk '{print $2}' | head -1)
+          VERSION_NAME=$(grep -oE "versionName[[:space:]]+'[^']+'" android-project/app/build.gradle | sed -E "s/.*'([^']+)'.*/\1/" | head -1)
+          cat > android-project/app/src/main/assets/update/latest.json <<EOF
+          {
+            "versionCode": ${VERSION_CODE},
+            "versionName": "${VERSION_NAME}",
+            "apkUrl": "https://messengerscotty-byte.github.io/Combo/update/Combo-Forge.apk",
+            "notes": "A newer Combo Forge build is available."
+          }
+          EOF
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages app
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: android-project/app/src/main/assets
+      - name: Publish newest app
+        id: deployment
+        uses: actions/deploy-pages@v4
