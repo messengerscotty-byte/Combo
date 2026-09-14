@@ -1,13 +1,24 @@
-name: Build Android APK
+name: Build APK and Publish App
+
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
-  build:
+  apk:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Extract project
+        run: |
+          mkdir android-project
+          unzip -q combo_forge_android_project.zip -d android-project
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -16,7 +27,30 @@ jobs:
         with:
           gradle-version: '8.9'
       - run: gradle assembleDebug
+        working-directory: android-project
       - uses: actions/upload-artifact@v4
         with:
-          name: combo-forge-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: Combo-Forge-APK
+          path: android-project/app/build/outputs/apk/debug/app-debug.apk
+
+  pages:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract web app
+        run: |
+          mkdir android-project
+          unzip -q combo_forge_android_project.zip -d android-project
+          touch android-project/app/src/main/assets/.nojekyll
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages app
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: android-project/app/src/main/assets
+      - name: Publish newest app
+        id: deployment
+        uses: actions/deploy-pages@v4
